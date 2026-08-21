@@ -1,0 +1,186 @@
+name: MERN E-commerce CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+jobs:
+
+  # ============================================================
+  # JOB 1 - UNIT TESTS / LINT
+  # ============================================================
+
+  unit-tests:
+    name: Unit Tests & Lint
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      # -------------------------
+      # Backend
+      # (deps live at repo ROOT, not backend/ - no backend/package.json exists)
+      # -------------------------
+
+      - name: Install Backend Dependencies
+        run: npm ci
+
+      - name: Backend Test Check
+        run: |
+          echo "Backend does not have a test script."
+          echo "Skipping backend unit tests."
+
+      # -------------------------
+      # Frontend
+      # -------------------------
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend Lint
+        working-directory: frontend
+        run: npm run lint
+
+
+  # ============================================================
+  # JOB 2 - SONARCLOUD
+  # ============================================================
+
+  sonarcloud:
+    name: SonarCloud Analysis
+    needs: unit-tests
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+
+  # ============================================================
+  # JOB 3 - BUILD & PUSH DOCKER IMAGES
+  # ============================================================
+
+  build-and-push:
+    name: Build & Push Docker Images
+    needs:
+      - unit-tests
+      - sonarcloud
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # -------------------------
+      # Docker Buildx
+      # -------------------------
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # -------------------------
+      # Docker Hub Login
+      # -------------------------
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # ========================================================
+      # BACKEND IMAGE
+      # Context is REPO ROOT ("."), not "./backend" - because
+      # package.json/package-lock.json live at root, and
+      # backend/Dockerfile's COPY instructions expect that.
+      # No build-args needed - backend reads all config from
+      # runtime env vars (Mongo/Redis/Cloudinary/Stripe secrets
+      # are injected at container start, not baked into the image).
+      # ========================================================
+
+      - name: Build & Push Backend Image
+        id: backend-build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            vipulsingh2200/mern-ecommerce-backend:latest
+            vipulsingh2200/mern-ecommerce-backend:${{ github.sha }}
+
+      # ========================================================
+      # FRONTEND IMAGE
+      # Context is ./frontend (self-contained, own package.json).
+      # This app has NO Vite build-time secrets (no Clerk/ImageKit
+      # equivalent) - src/lib/axios.js just switches base URL via
+      # import.meta.mode, and calls a relative "/api" path in
+      # production. So there is no build-args block here at all;
+      # your ingress must proxy /api to the backend service.
+      # ========================================================
+
+      - name: Build & Push Frontend Image
+        id: frontend-build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            vipulsingh2200/mern-ecommerce-frontend:latest
+            vipulsingh2200/mern-ecommerce-frontend:${{ github.sha }}
+
+      # -------------------------
+      # Build Summary
+      # -------------------------
+
+      - name: Docker Build Summary
+        run: |
+          echo "======================================"
+          echo "Docker images built successfully"
+          echo "======================================"
+
+          echo "Backend:"
+          echo "vipulsingh2200/mern-ecommerce-backend:latest"
+          echo "vipulsingh2200/mern-ecommerce-backend:${{ github.sha }}"
+
+          echo ""
+
+          echo "Frontend:"
+          echo "vipulsingh2200/mern-ecommerce-frontend:latest"
+          echo "vipulsingh2200/mern-ecommerce-frontend:${{ github.sha }}"
+
+          echo ""
+
+          echo "Backend Digest:"
+          echo "${{ steps.backend-build.outputs.digest }}"
+
+          echo ""
+
+          echo "Frontend Digest:"
+          echo "${{ steps.frontend-build.outputs.digest }}"
