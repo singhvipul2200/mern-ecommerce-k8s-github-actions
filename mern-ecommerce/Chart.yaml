@@ -1,0 +1,6 @@
+apiVersion: v2
+name: mern-ecommerce
+description: Simple Helm chart for the MERN e-commerce app
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

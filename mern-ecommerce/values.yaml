@@ -1,0 +1,7 @@
+backend:
+  image: vipulsingh2200/mern-ecommerce-backend:latest
+  replicas: 3
+
+frontend:
+  image: vipulsingh2200/mern-ecommerce-frontend:latest
+  replicas: 3
