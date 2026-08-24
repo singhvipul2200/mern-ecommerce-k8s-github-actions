@@ -137,7 +137,7 @@ jobs:
 
           tags: |
             vipulsingh2200/mern-ecommerce-backend:latest
-            vipulsingh2200/mern-ecommerce-backend:${{ github.sha }}
+            vipulsingh2200/mern-ecommerce-backend:v${{ github.run_number }}
 
 
       # ========================================================
@@ -157,7 +157,7 @@ jobs:
 
           tags: |
             vipulsingh2200/mern-ecommerce-frontend:latest
-            vipulsingh2200/mern-ecommerce-frontend:${{ github.sha }}
+            vipulsingh2200/mern-ecommerce-frontend:v${{ github.run_number }}
 
 
       # ========================================================
