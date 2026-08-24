@@ -5,7 +5,17 @@ on:
     branches:
       - main
 
+    # Prevent the GitOps commit from triggering
+    # the complete CI/CD pipeline again.
+    paths-ignore:
+      - "mern-ecommerce/values.yaml"
+
   workflow_dispatch:
+
+# Required so GitHub Actions can commit
+# the updated Helm values back to main.
+permissions:
+  contents: write
 
 jobs:
 
@@ -33,7 +43,6 @@ jobs:
 
       # -------------------------
       # Backend
-      # (deps live at repo ROOT, not backend/ - no backend/package.json exists)
       # -------------------------
 
       - name: Install Backend Dependencies
@@ -85,6 +94,7 @@ jobs:
 
   build-and-push:
     name: Build & Push Docker Images
+
     needs:
       - unit-tests
       - sonarcloud
@@ -93,8 +103,13 @@ jobs:
 
     steps:
 
+      # -------------------------
+      # Checkout
+      # -------------------------
+
       - name: Checkout Repository
         uses: actions/checkout@v4
+
 
       # -------------------------
       # Docker Buildx
@@ -102,6 +117,7 @@ jobs:
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
+
 
       # -------------------------
       # Docker Hub Login
@@ -113,57 +129,59 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+
       # ========================================================
       # BACKEND IMAGE
-      # Context is REPO ROOT ("."), not "./backend" - because
-      # package.json/package-lock.json live at root, and
-      # backend/Dockerfile's COPY instructions expect that.
-      # No build-args needed - backend reads all config from
-      # runtime env vars (Mongo/Redis/Cloudinary/Stripe secrets
-      # are injected at container start, not baked into the image).
       # ========================================================
 
       - name: Build & Push Backend Image
         id: backend-build
+
         uses: docker/build-push-action@v6
+
         with:
           context: .
           file: ./backend/Dockerfile
+
           push: true
+
           tags: |
             vipulsingh2200/mern-ecommerce-backend:latest
             vipulsingh2200/mern-ecommerce-backend:${{ github.sha }}
 
+
       # ========================================================
       # FRONTEND IMAGE
-      # Context is ./frontend (self-contained, own package.json).
-      # This app has NO Vite build-time secrets (no Clerk/ImageKit
-      # equivalent) - src/lib/axios.js just switches base URL via
-      # import.meta.mode, and calls a relative "/api" path in
-      # production. So there is no build-args block here at all;
-      # your ingress must proxy /api to the backend service.
       # ========================================================
 
       - name: Build & Push Frontend Image
         id: frontend-build
+
         uses: docker/build-push-action@v6
+
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
+
           push: true
+
           tags: |
             vipulsingh2200/mern-ecommerce-frontend:latest
             vipulsingh2200/mern-ecommerce-frontend:${{ github.sha }}
 
-      # -------------------------
-      # Build Summary
-      # -------------------------
+
+      # ========================================================
+      # DOCKER BUILD SUMMARY
+      # ========================================================
 
       - name: Docker Build Summary
         run: |
+
           echo "======================================"
           echo "Docker images built successfully"
           echo "======================================"
+
+          echo ""
 
           echo "Backend:"
           echo "vipulsingh2200/mern-ecommerce-backend:latest"
@@ -184,3 +202,78 @@ jobs:
 
           echo "Frontend Digest:"
           echo "${{ steps.frontend-build.outputs.digest }}"
+
+
+      # ========================================================
+      # GITOPS
+      # UPDATE HELM IMAGE TAGS
+      # ========================================================
+
+      - name: Update Helm Image Tags
+
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+
+        run: |
+
+          python - <<'PY'
+
+          from pathlib import Path
+          import re
+          import os
+
+          path = Path("mern-ecommerce/values.yaml")
+
+          text = path.read_text()
+
+          image_tag = os.environ["IMAGE_TAG"]
+
+          # Update backend tag
+          text = re.sub(
+              r'(backend:\s*\n\s*image:\s*\n\s*repository:.*\n\s*tag:)\s*"[^"]*"',
+              rf'\1 "{image_tag}"',
+              text,
+              count=1
+          )
+
+          # Update frontend tag
+          text = re.sub(
+              r'(frontend:\s*\n\s*image:\s*\n\s*repository:.*\n\s*tag:)\s*"[^"]*"',
+              rf'\1 "{image_tag}"',
+              text,
+              count=1
+          )
+
+          path.write_text(text)
+
+          PY
+
+
+          echo "======================================"
+          echo "Updated Helm values"
+          echo "======================================"
+
+          cat mern-ecommerce/values.yaml
+
+
+      # ========================================================
+      # GITOPS
+      # COMMIT HELM CHANGE BACK TO MAIN
+      # ========================================================
+
+      - name: Commit and Push Helm Changes
+
+        run: |
+
+          git config user.name "github-actions[bot]"
+
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add mern-ecommerce/values.yaml
+
+          git commit \
+            -m "chore: update image tags to ${GITHUB_SHA}" \
+            || echo "No changes to commit"
+
+          git push origin HEAD:main
