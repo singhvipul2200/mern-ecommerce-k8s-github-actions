@@ -5,17 +5,7 @@ on:
     branches:
       - main
 
-    # Prevent the GitOps commit from triggering
-    # the complete CI/CD pipeline again.
-    paths-ignore:
-      - "mern-ecommerce/values.yaml"
-
   workflow_dispatch:
-
-# Required so GitHub Actions can commit
-# the updated Helm values back to main.
-permissions:
-  contents: write
 
 jobs:
 
@@ -104,7 +94,7 @@ jobs:
     steps:
 
       # -------------------------
-      # Checkout
+      # Checkout Repository
       # -------------------------
 
       - name: Checkout Repository
@@ -171,7 +161,7 @@ jobs:
 
 
       # ========================================================
-      # DOCKER BUILD SUMMARY
+      # BUILD SUMMARY
       # ========================================================
 
       - name: Docker Build Summary
@@ -202,78 +192,3 @@ jobs:
 
           echo "Frontend Digest:"
           echo "${{ steps.frontend-build.outputs.digest }}"
-
-
-      # ========================================================
-      # GITOPS
-      # UPDATE HELM IMAGE TAGS
-      # ========================================================
-
-      - name: Update Helm Image Tags
-
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-
-        run: |
-
-          python - <<'PY'
-
-          from pathlib import Path
-          import re
-          import os
-
-          path = Path("mern-ecommerce/values.yaml")
-
-          text = path.read_text()
-
-          image_tag = os.environ["IMAGE_TAG"]
-
-          # Update backend tag
-          text = re.sub(
-              r'(backend:\s*\n\s*image:\s*\n\s*repository:.*\n\s*tag:)\s*"[^"]*"',
-              rf'\1 "{image_tag}"',
-              text,
-              count=1
-          )
-
-          # Update frontend tag
-          text = re.sub(
-              r'(frontend:\s*\n\s*image:\s*\n\s*repository:.*\n\s*tag:)\s*"[^"]*"',
-              rf'\1 "{image_tag}"',
-              text,
-              count=1
-          )
-
-          path.write_text(text)
-
-          PY
-
-
-          echo "======================================"
-          echo "Updated Helm values"
-          echo "======================================"
-
-          cat mern-ecommerce/values.yaml
-
-
-      # ========================================================
-      # GITOPS
-      # COMMIT HELM CHANGE BACK TO MAIN
-      # ========================================================
-
-      - name: Commit and Push Helm Changes
-
-        run: |
-
-          git config user.name "github-actions[bot]"
-
-          git config user.email \
-            "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add mern-ecommerce/values.yaml
-
-          git commit \
-            -m "chore: update image tags to ${GITHUB_SHA}" \
-            || echo "No changes to commit"
-
-          git push origin HEAD:main
