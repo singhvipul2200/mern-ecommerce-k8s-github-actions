@@ -1,7 +1,11 @@
 backend:
-  image: vipulsingh2200/mern-ecommerce-backend:latest
+  image:
+    repository: vipulsingh2200/mern-ecommerce-backend
+    tag: "abc123"
   replicas: 3
 
 frontend:
-  image: vipulsingh2200/mern-ecommerce-frontend:latest
+  image:
+    repository: vipulsingh2200/mern-ecommerce-frontend
+    tag: "abc123"
   replicas: 3
