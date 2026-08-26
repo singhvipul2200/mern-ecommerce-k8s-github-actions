@@ -1,0 +1,11 @@
+# ------------------------------------------------------------------------------------
+# terraform.tfvars.example
+# Copy this to terraform.tfvars and fill in the real values from your
+# terraform_vpc output (run `terraform output` inside terraform_vpc to see them).
+# Rename to terraform.tfvars so Terraform picks it up automatically.
+# ------------------------------------------------------------------------------------
+
+vpc_id     = "vpc-0123456789abcdef0"
+subnet_ids = ["subnet-0123456789abcdef0", "subnet-0abcdef0123456789"]
+
+cluster_name = "my-eks-cluster" # must match eks_cluster_name used in terraform_vpc
